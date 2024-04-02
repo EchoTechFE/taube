@@ -1,0 +1,38 @@
+{
+  "name": "taube",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "zhuscat",
+  "license": "ISC",
+  "devDependencies": {
+    "@dcloudio/uni-app": "3.0.0-3061820230117001",
+    "prettier": "3.2.5",
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.3",
+    "vue": "^3.0.0"
+  },
+  "peerDependencies": {
+    "@dcloudio/uni-app": ">=3.0.0",
+    "vue": "^3.4.21"
+  }
+}
