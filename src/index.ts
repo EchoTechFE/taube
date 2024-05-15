@@ -9,7 +9,10 @@ import {
   getCurrentInstance,
 } from 'vue'
 import type { Ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+
+// status: fetching | paused | idle
+// status: pending | error | success
 
 function useRoute() {
   const route = reactive({
@@ -68,8 +71,12 @@ class InfiniteQueryObserver<T = any> {
   isPending = true
   updatedAt?: number
   data?: T[]
+  pageParams?: unknown[]
   error?: Error
-  promise?: Promise<T[]>
+  promise?: Promise<{
+    pages: T[]
+    pageParams: unknown[]
+  }>
   hasNextPage = true
 
   constructor(private fn: InfiniteQueryFn<T>) {}
@@ -93,7 +100,7 @@ class InfiniteQueryObserver<T = any> {
   async fetch(ctx: {
     queryKey: RawQueryKey
     route: { query: Record<string, string> }
-    maxPages: number
+    maxRefetchPages: number
     getNextPageParam: (lastPage: T, pages: T[]) => any
   }) {
     if (this.promise) {
@@ -103,13 +110,19 @@ class InfiniteQueryObserver<T = any> {
     if (this.data === undefined) {
       this.isPending = true
     }
+    this.error = undefined
     this.isFetching = true
     this.hasNextPage = true
 
     const refresh = async () => {
       const data: T[] = []
+      const pageParams: unknown[] = []
       if (this.data?.length) {
-        for (let i = 0; i < Math.min(this.data.length, ctx.maxPages); i++) {
+        for (
+          let i = 0;
+          i < Math.min(this.data.length, ctx.maxRefetchPages);
+          i++
+        ) {
           let pageParam: any = undefined
           if (i > 0) {
             pageParam = ctx.getNextPageParam(data[data.length - 1], data)
@@ -128,6 +141,7 @@ class InfiniteQueryObserver<T = any> {
                 : ctx.getNextPageParam(data[data.length - 1], data),
           })
           data.push(ret)
+          pageParams.push(pageParam)
         }
       } else {
         const ret = await this.fn({
@@ -136,15 +150,21 @@ class InfiniteQueryObserver<T = any> {
           pageParam: undefined,
         })
         data.push(ret)
+        pageParams.push(undefined)
       }
 
-      return data
+      return {
+        pages: data,
+        pageParams,
+      }
     }
+
     this.promise = refresh()
     this.broadcast()
     try {
       const ret = await this.promise
-      this.data = ret
+      this.data = ret.pages
+      this.pageParams = ret.pageParams
     } catch (err: any) {
       this.error = err
     }
@@ -188,13 +208,17 @@ class InfiniteQueryObserver<T = any> {
     }
     this.isFetching = true
     this.isFetchingNextPage = true
-    this.promise = this.fn({ ...ctx, pageParam: nextPageParam }).then((ret) => [
-      ret,
-    ])
+    this.promise = this.fn({ ...ctx, pageParam: nextPageParam }).then((ret) => {
+      return {
+        pages: [ret],
+        pageParams: [nextPageParam],
+      }
+    })
     this.broadcast()
     try {
       const ret = await this.promise
-      this.data = [...this.data, ...ret]
+      this.data = [...this.data, ...ret.pages]
+      this.pageParams = [...this.pageParams, ...ret.pageParams]
     } catch (err: any) {
       this.error = err
     }
@@ -211,6 +235,7 @@ class InfiniteQueryObserver<T = any> {
       isFetchingNextPage: this.isFetchingNextPage,
       isPending: this.isPending,
       data: this.data,
+      pageParams: this.pageParams,
       error: this.error,
       updatedAt: this.updatedAt,
       hasNextPage: this.hasNextPage,
@@ -258,6 +283,7 @@ class QueryObserver<T = any> {
       this.isPending = true
     }
     this.isFetching = true
+    this.error = undefined
     this.promise = this.fn(ctx)
     this.broadcast()
     try {
@@ -285,13 +311,12 @@ class QueryObserver<T = any> {
 }
 
 const gcTime = 5 * 60 * 1000
-const staleTime = 0
 
 const map = new Map<string, QueryObserver>()
 const infiniteQueryMap = new Map<string, InfiniteQueryObserver>()
 
 // simple enough but not robust enough, should change
-function hash(o: any) {
+export function hash(o: any) {
   if (typeof o === 'string' || typeof o === 'number') {
     return '' + o
   }
@@ -322,71 +347,79 @@ function useKeyRef(queryKey: QueryKey) {
   return ref(queryKey)
 }
 
-export function useQuery<T>({
+type BaseObserver<QuerySubscriber> = {
+  s: Set<QuerySubscriber>
+  subscribe(subscriber: QuerySubscriber): void
+  unsubscribe(subscriber: QuerySubscriber): void
+  getCurrent(): { data: any; updatedAt?: number }
+}
+
+function useQueryObserverLifecycle<
+  Subscriber extends (...args: any) => void,
+  Observer extends BaseObserver<Subscriber>,
+>({
   queryKey,
-  queryFn,
   enabled,
+  staleTime,
+  refetchOnShow,
+  map,
+  subscriber,
+  createObserver,
+  observerFetch,
 }: {
   queryKey: QueryKey
-  queryFn: QueryFn<T>
   enabled: () => boolean
+  staleTime: number
+  refetchOnShow: boolean | undefined
+  map: Map<string, Observer>
+  subscriber: Subscriber
+  createObserver: () => Observer
+  observerFetch: (observer: Observer) => void
 }) {
   const keyRef = useKeyRef(queryKey)
-  const data = ref<T | undefined>()
-  const isPending = ref(true)
-  const isFetching = ref(true)
-  const error = ref()
-  const isError = computed(() => !!error.value)
-  const route = useRoute()
+  const onShowTimestamp = ref(0)
 
-  function subscriber(payload: {
-    isFetching: boolean
-    isPending: boolean
-    data: any
-    error?: Error
-    updatedAt?: number
-  }) {
-    data.value = payload.data
-    isFetching.value = payload.isFetching
-    isPending.value = payload.isPending
-    error.value = payload.error
+  function cleanSubscriber(hash: string) {
+    const previousObserver = map.get(hash)
+    if (previousObserver) {
+      previousObserver.unsubscribe(subscriber)
+      scheduleTimeout(
+        hash,
+        () => {
+          if (previousObserver.s.size === 0) {
+            if (map.get(hash) === previousObserver) {
+              map.delete(hash)
+            }
+          }
+        },
+        gcTime,
+      )
+    }
   }
 
   onMounted(() => {
+    console.log('on mounted')
     watch(
-      [keyRef, enabled] as const,
+      [keyRef, enabled, onShowTimestamp] as const,
       async ([k, currentEnabled], [previousK]) => {
         const kHash = hash(k)
+
+        // 如果 key 发生变化，清理上一个 key 的 observer
         if (previousK) {
           const previousKHash = hash(previousK)
-          // 如果 key 没有变化，直接返回
-          if (previousKHash === kHash) {
-            return
-          }
-
-          const previousObserver = map.get(previousKHash)
-          if (previousObserver) {
-            previousObserver.unsubscribe(subscriber)
-            scheduleTimeout(
-              previousKHash,
-              () => {
-                if (previousObserver.s.size === 0) {
-                  if (map.get(previousKHash) === previousObserver) {
-                    map.delete(previousKHash)
-                  }
-                }
-              },
-              gcTime,
-            )
+          if (previousKHash !== kHash) {
+            cleanSubscriber(previousKHash)
           }
         }
 
+        // 如果没有开启，直接返回
         if (!currentEnabled) {
+          cleanSubscriber(kHash)
           return
         }
 
         if (!map.has(kHash)) {
-          map.set(kHash, new QueryObserver<T>(queryFn))
+          map.set(kHash, createObserver())
         }
 
         const observer = map.get(kHash)!
@@ -396,10 +429,12 @@ export function useQuery<T>({
 
         subscriber(current)
 
+        // 数据还没过期
         if (current.data && Date.now() - (current.updatedAt ?? 0) < staleTime) {
           return
         }
-        observer.fetch({ queryKey: k, route: route as any })
+
+        observerFetch(observer)
       },
       {
         immediate: true,
@@ -407,9 +442,14 @@ export function useQuery<T>({
     )
   })
 
-  function refetch() {}
+  if (refetchOnShow) {
+    onShow(() => {
+      onShowTimestamp.value = Date.now()
+    })
+  }
 
   onBeforeUnmount(() => {
+    console.log('unmount!!!')
     const kHash = hash(keyRef.value)
     const observer = map.get(kHash)
     if (observer) {
@@ -427,6 +467,66 @@ export function useQuery<T>({
       )
     }
   })
+}
+
+export function useQuery<T>({
+  queryKey,
+  queryFn,
+  enabled,
+  refetchOnShow,
+  staleTime,
+}: {
+  queryKey: QueryKey
+  queryFn: QueryFn<T>
+  enabled: () => boolean
+  refetchOnShow?: boolean
+  staleTime?: number
+}) {
+  const keyRef = useKeyRef(queryKey)
+  const data = ref<T | undefined>()
+  const isPending = ref(true)
+  const isFetching = ref(true)
+  const error = ref()
+  const isError = computed(() => !!error.value)
+  const route = useRoute()
+  const updatedAt = ref(-1)
+
+  staleTime = staleTime ?? 0
+
+  function subscriber(payload: {
+    isFetching: boolean
+    isPending: boolean
+    data: any
+    error?: Error
+    updatedAt?: number
+  }) {
+    data.value = payload.data
+    isFetching.value = payload.isFetching
+    isPending.value = payload.isPending
+    error.value = payload.error
+    updatedAt.value = payload.updatedAt
+  }
+
+  useQueryObserverLifecycle({
+    queryKey,
+    enabled,
+    staleTime,
+    refetchOnShow,
+    map,
+    subscriber,
+    createObserver: () => new QueryObserver(queryFn),
+    observerFetch: (observer) => {
+      observer.fetch({ queryKey: keyRef.value, route: route as any })
+    },
+  })
+
+  function refetch() {
+    const kHash = hash(keyRef.value)
+    const observer = map.get(kHash)
+    if (observer) {
+      observer.fetch({ queryKey: keyRef.value, route: route as any })
+    }
+  }
 
   return {
     data,
@@ -443,18 +543,23 @@ export function useInfiniteQuery<T>({
   queryFn,
   enabled,
   getNextPageParam,
-  maxPages,
+  maxRefetchPages,
   staleTime,
+  refetchOnShow,
 }: {
   queryKey: QueryKey
   queryFn: InfiniteQueryFn<T>
   enabled: () => boolean
   getNextPageParam: (lastPage: T, pages: T[]) => any
-  maxPages: number | undefined
-  staleTime: number
+  maxRefetchPages: number | undefined
+  staleTime?: number
+  refetchOnShow?: boolean
 }) {
+  refetchOnShow = refetchOnShow || false
+
   const keyRef = useKeyRef(queryKey)
   const data = ref<T[] | undefined>()
+  const pageParams = ref<unknown[] | undefined>()
   const isPending = ref(true)
   const isFetching = ref(true)
   const isFetchingNextPage = ref(false)
@@ -462,6 +567,9 @@ export function useInfiniteQuery<T>({
   const error = ref()
   const isError = computed(() => !!error.value)
   const route = useRoute()
+  const updatedAt = ref(-1)
+
+  staleTime = staleTime ?? 0
 
   function subscriber(payload: {
     isFetching: boolean
@@ -471,6 +579,7 @@ export function useInfiniteQuery<T>({
     updatedAt?: number
     isFetchingNextPage: boolean
     hasNextPage: boolean
+    pageParams: unknown[]
   }) {
     data.value = payload.data
     isFetching.value = payload.isFetching
@@ -478,68 +587,26 @@ export function useInfiniteQuery<T>({
     error.value = payload.error
     isFetchingNextPage.value = payload.isFetchingNextPage
     hasNextPage.value = payload.hasNextPage
+    updatedAt.value = payload.updatedAt ?? 0
+    pageParams.value = payload.pageParams
   }
 
-  onMounted(() => {
-    watch(
-      [keyRef, enabled] as const,
-      async ([k, currentEnabled], [previousK]) => {
-        const kHash = hash(k)
-        if (previousK) {
-          const previousKHash = hash(previousK)
-          // 如果 key 没有变化，直接返回
-          if (previousKHash === kHash) {
-            return
-          }
-
-          const previousObserver = infiniteQueryMap.get(previousKHash)
-          if (previousObserver) {
-            previousObserver.unsubscribe(subscriber)
-            scheduleTimeout(
-              previousKHash,
-              () => {
-                if (previousObserver.s.size === 0) {
-                  if (
-                    infiniteQueryMap.get(previousKHash) === previousObserver
-                  ) {
-                    infiniteQueryMap.delete(previousKHash)
-                  }
-                }
-              },
-              gcTime,
-            )
-          }
-        }
-
-        if (!currentEnabled) {
-          return
-        }
-
-        if (!infiniteQueryMap.has(kHash)) {
-          infiniteQueryMap.set(kHash, new InfiniteQueryObserver<T>(queryFn))
-        }
-
-        const observer = infiniteQueryMap.get(kHash)!
-        observer.subscribe(subscriber)
-
-        const current = observer.getCurrent()
-
-        subscriber(current)
-
-        if (current.data && Date.now() - (current.updatedAt ?? 0) < staleTime) {
-          return
-        }
-        observer.fetch({
-          queryKey: k,
-          route: route as any,
-          getNextPageParam,
-          maxPages: maxPages ?? Infinity,
-        })
-      },
-      {
-        immediate: true,
-      },
-    )
+  useQueryObserverLifecycle({
+    queryKey,
+    enabled,
+    staleTime,
+    refetchOnShow,
+    map: infiniteQueryMap,
+    subscriber,
+    createObserver: () => new InfiniteQueryObserver(queryFn),
+    observerFetch: (observer) => {
+      observer.fetch({
+        queryKey: keyRef.value,
+        route: route as any,
+        getNextPageParam,
+        maxRefetchPages: maxRefetchPages ?? Infinity,
+      })
+    },
   })
 
   function fetchNextPage() {
@@ -554,27 +621,16 @@ export function useInfiniteQuery<T>({
     }
   }
 
-  onBeforeUnmount(() => {
-    const kHash = hash(keyRef.value)
-    const observer = infiniteQueryMap.get(kHash)
-    if (observer) {
-      observer.unsubscribe(subscriber)
-      scheduleTimeout(
-        kHash,
-        () => {
-          if (observer.s.size === 0) {
-            if (infiniteQueryMap.get(kHash) === observer) {
-              infiniteQueryMap.delete(kHash)
-            }
-          }
-        },
-        gcTime,
-      )
-    }
-  })
-
   return {
-    data,
+    data: computed(() => {
+      if (!data.value) {
+        return undefined
+      }
+      return {
+        pages: data.value,
+        pageParams: pageParams.value,
+      }
+    }),
     isPending,
     isFetching,
     isError,
@@ -583,3 +639,6 @@ export function useInfiniteQuery<T>({
     hasNextPage,
   }
 }
+
+export const queryMap = map
+export { infiniteQueryMap }
