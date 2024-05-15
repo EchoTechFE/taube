@@ -398,7 +398,6 @@ function useQueryObserverLifecycle<
   }
 
   onMounted(() => {
-    console.log('on mounted')
     watch(
       [keyRef, enabled, onShowTimestamp] as const,
       async ([k, currentEnabled], [previousK]) => {
@@ -449,7 +448,6 @@ function useQueryObserverLifecycle<
   }
 
   onBeforeUnmount(() => {
-    console.log('unmount!!!')
     const kHash = hash(keyRef.value)
     const observer = map.get(kHash)
     if (observer) {
