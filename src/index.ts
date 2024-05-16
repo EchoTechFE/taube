@@ -39,6 +39,7 @@ type QuerySubscriber = (payload: {
   data: any
   error?: Error
   updatedAt?: number
+  isOnInvalidate?: boolean
 }) => void
 
 type QueryFn<T> = (ctx: {
@@ -95,6 +96,15 @@ class InfiniteQueryObserver<T = any> {
 
   unsubscribe(subscriber: QuerySubscriber) {
     this.s.delete(subscriber)
+  }
+
+  invalidate() {
+    this.s.forEach((subscriber) => {
+      subscriber({
+        ...this.getCurrent(),
+        isOnInvalidate: true,
+      })
+    })
   }
 
   async fetch(ctx: {
@@ -268,6 +278,15 @@ class QueryObserver<T = any> {
 
   unsubscribe(subscriber: QuerySubscriber) {
     this.s.delete(subscriber)
+  }
+
+  invalidate() {
+    this.s.forEach((subscriber) => {
+      subscriber({
+        ...this.getCurrent(),
+        isOnInvalidate: true,
+      })
+    })
   }
 
   async fetch(ctx: {
@@ -497,7 +516,13 @@ export function useQuery<T>({
     data: any
     error?: Error
     updatedAt?: number
+    isOnInvlidate?: boolean
   }) {
+    if (payload.isOnInvlidate) {
+      refetch()
+      return
+    }
+
     data.value = payload.data
     isFetching.value = payload.isFetching
     isPending.value = payload.isPending
@@ -578,7 +603,22 @@ export function useInfiniteQuery<T>({
     isFetchingNextPage: boolean
     hasNextPage: boolean
     pageParams: unknown[]
+    isOnInvalidate?: boolean
   }) {
+    if (payload.isOnInvalidate) {
+      const kHash = hash(keyRef.value)
+      const observer = infiniteQueryMap.get(kHash)
+      if (observer) {
+        observer.fetch({
+          queryKey: keyRef.value,
+          route: route as any,
+          getNextPageParam,
+          maxRefetchPages: maxRefetchPages ?? Infinity,
+        })
+      }
+      return
+    }
+
     data.value = payload.data
     isFetching.value = payload.isFetching
     isPending.value = payload.isPending
@@ -635,6 +675,23 @@ export function useInfiniteQuery<T>({
     error,
     fetchNextPage,
     hasNextPage,
+  }
+}
+
+export function useQueryClient() {
+  function invalidateQueries({ queryKey }: { queryKey: RawQueryKey }) {
+    const kHash = hash(queryKey)
+    const maps = [map, infiniteQueryMap]
+    maps.forEach((map) => {
+      const observer = map.get(kHash)
+      if (observer) {
+        observer.invalidate()
+      }
+    })
+  }
+
+  return {
+    invalidateQueries,
   }
 }
 

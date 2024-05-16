@@ -61,7 +61,7 @@ const { data, error, isPending, isFetching, isError } = useQuery({
 
 ### 读取路由中的参数
 
-这是与 TanStack 一个不同的地方，因为在 Web 中，当组件渲染的时候，就已经知道 route 了
+这是与 TanStack 一个不同的地方，因为在 Web 中，当组件渲染的时候，就已经知道 route 了，可以同步地使用 `useRoute` 拿参数，而在小程序中，需要在 `onLoad` 之后才能拿到路由，因此拿路由参数封装到了 `useQuery` 中
 
 ```js
 const { data, error, isPending, isFetching, isError } = useQuery({
@@ -202,4 +202,19 @@ const { ... } = useInfiniteQuery({
   // 最多刷新 5 页
   maxRefetchPages: 5,
 })
+```
+
+### 使数据失效
+
+场景：
+
+你更新了一条数据，并且想更新数据，使界面展现最新的数据，使用 invalidateQueries，可以重新获取某个 queryKey 对应的数据
+
+```js
+const queryClient = useQueryClient()
+
+async function updateTodo(id) {
+  await updateTodoById(id)
+  queryClient.invalidateQueries({ queryKey: ['todo', { id } ]})
+}
 ```
