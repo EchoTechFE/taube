@@ -2,7 +2,8 @@
   "compilerOptions": {
     "outDir": "./dist",
     "target": "ES2015",
-    "moduleResolution": "Bundler"
+    "moduleResolution": "Bundler",
+    "strictNullChecks": true
   },
   "include": ["./src/**/*"]
 }

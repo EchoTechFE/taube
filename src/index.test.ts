@@ -558,3 +558,68 @@ test('useInfiniteQuery dispose', async () => {
   ).toBeUndefined()
   vi.useRealTimers()
 })
+
+test('enabled', async () => {
+  const queryFn = vi.fn(() => {
+    return new Promise<string>((resolve) => {
+      resolve('test')
+    })
+  })
+  const TestComponent = defineComponent({
+    setup() {
+      return {
+        ...useQuery({
+          queryKey: ['enabled'],
+          queryFn,
+        }),
+      }
+    },
+  })
+  const wrapper = mount(TestComponent)
+  expect(wrapper.vm.isFetching).toBe(true)
+  expect(wrapper.vm.isPending).toBe(true)
+  expect(queryFn).toHaveBeenCalledTimes(1)
+  await flushPromises()
+  expect(wrapper.vm.isFetching).toBe(false)
+  expect(wrapper.vm.isPending).toBe(false)
+  expect(queryFn).toHaveBeenCalledTimes(1)
+  expect(wrapper.vm.data).toBe('test')
+})
+
+test('reactive enabled', async () => {
+  const queryFn = vi.fn(() => {
+    return new Promise<string>((resolve) => {
+      setTimeout(() => {
+        resolve('test')
+      }, 0)
+    })
+  })
+  const isEnabled = ref(false)
+  const TestComponent = defineComponent({
+    setup() {
+      return {
+        ...useQuery({
+          queryKey: ['reactiveEnabled'],
+          queryFn,
+          enabled: () => isEnabled.value,
+        }),
+      }
+    },
+  })
+  const wrapper = mount(TestComponent)
+  expect(wrapper.vm.isFetching).toBe(false)
+  expect(wrapper.vm.isPending).toBe(true)
+  expect(queryFn).toHaveBeenCalledTimes(0)
+  isEnabled.value = true
+  await flushPromises()
+  expect(wrapper.vm.isFetching).toBe(true)
+  expect(wrapper.vm.isPending).toBe(true)
+  expect(queryFn).toHaveBeenCalledTimes(1)
+  await new Promise((resolve) => {
+    setTimeout(resolve, 100)
+  })
+  expect(wrapper.vm.isFetching).toBe(false)
+  expect(wrapper.vm.isPending).toBe(false)
+  expect(queryFn).toHaveBeenCalledTimes(1)
+  expect(wrapper.vm.data).toBe('test')
+})

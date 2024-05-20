@@ -22,7 +22,7 @@ function useRoute() {
   const instance = getCurrentInstance()
   if ((instance?.proxy?.$root as any)?.$scope?.options) {
     route.query = {
-      ...(instance.proxy.$root as any).$scope.options,
+      ...(instance!.proxy!.$root as any).$scope.options,
     }
   } else {
     onLoad((options) => {
@@ -183,8 +183,9 @@ class InfiniteQueryObserver<T = any> {
     this.promise = undefined
     this.updatedAt = Date.now()
     if (
-      this.data.length === 0 ||
-      ctx.getNextPageParam(this.data[this.data.length - 1], this.data) == null
+      this.data!.length === 0 ||
+      ctx.getNextPageParam(this.data![this.data!.length - 1], this.data!) ==
+        null
     ) {
       this.hasNextPage = false
     }
@@ -228,7 +229,7 @@ class InfiniteQueryObserver<T = any> {
     try {
       const ret = await this.promise
       this.data = [...this.data, ...ret.pages]
-      this.pageParams = [...this.pageParams, ...ret.pageParams]
+      this.pageParams = [...this.pageParams!, ...ret.pageParams]
     } catch (err: any) {
       this.error = err
     }
@@ -387,7 +388,7 @@ function useQueryObserverLifecycle<
   observerFetch,
 }: {
   queryKey: QueryKey
-  enabled: () => boolean
+  enabled?: () => boolean
   staleTime: number
   refetchOnShow: boolean | undefined
   map: Map<string, Observer>
@@ -395,6 +396,7 @@ function useQueryObserverLifecycle<
   createObserver: () => Observer
   observerFetch: (observer: Observer) => void
 }) {
+  enabled = enabled || (() => true)
   const keyRef = useKeyRef(queryKey)
   const onShowTimestamp = ref(0)
 
@@ -431,7 +433,7 @@ function useQueryObserverLifecycle<
         }
 
         // 如果没有开启，直接返回
-        if (!currentEnabled) {
+        if (typeof currentEnabled === 'boolean' && !currentEnabled) {
           cleanSubscriber(kHash)
           return
         }
@@ -495,14 +497,14 @@ export function useQuery<T>({
 }: {
   queryKey: QueryKey
   queryFn: QueryFn<T>
-  enabled: () => boolean
+  enabled?: () => boolean
   refetchOnShow?: boolean
   staleTime?: number
 }) {
   const keyRef = useKeyRef(queryKey)
   const data = ref<T | undefined>()
   const isPending = ref(true)
-  const isFetching = ref(true)
+  const isFetching = ref(false)
   const error = ref()
   const isError = computed(() => !!error.value)
   const route = useRoute()
@@ -527,7 +529,9 @@ export function useQuery<T>({
     isFetching.value = payload.isFetching
     isPending.value = payload.isPending
     error.value = payload.error
-    updatedAt.value = payload.updatedAt
+    if (payload.updatedAt) {
+      updatedAt.value = payload.updatedAt
+    }
   }
 
   useQueryObserverLifecycle({
@@ -572,7 +576,7 @@ export function useInfiniteQuery<T>({
 }: {
   queryKey: QueryKey
   queryFn: InfiniteQueryFn<T>
-  enabled: () => boolean
+  enabled?: () => boolean
   getNextPageParam: (lastPage: T, pages: T[]) => any
   maxRefetchPages: number | undefined
   staleTime?: number
@@ -584,7 +588,7 @@ export function useInfiniteQuery<T>({
   const data = ref<T[] | undefined>()
   const pageParams = ref<unknown[] | undefined>()
   const isPending = ref(true)
-  const isFetching = ref(true)
+  const isFetching = ref(false)
   const isFetchingNextPage = ref(false)
   const hasNextPage = ref(true)
   const error = ref()
