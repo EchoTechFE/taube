@@ -218,3 +218,77 @@ async function updateTodo(id) {
   queryClient.invalidateQueries({ queryKey: ['todo', { id } ]})
 }
 ```
+
+### form 场景
+
+> React Query is all about keeping your UI up-to-date with Server State.
+
+这是 TanStack Query 博客中的一句话，你不应该直接去修改 `useQuery` 返回的数据，大多数服务端客户端架构的应用，也不需要
+
+比如说，你调用接口可能会改变服务端状态，你可以调用 `invalidateQueries` 去使客户端缓存失效，从而重新请求获取最新状态
+
+然而，一些场景确实需要客户端去临时修改服务端返回的数据，最典型的场景是表单，你可能需要从服务端获取当前的数据回显到表单上，然后用户可以在表单中进行任意的更改，然后提交表单
+
+这种情况，可以将 `staleTime` 设置为 `Infinity`，`gcTime` 设置为 `0`
+
+比如，
+
+```js
+const { data } = useQuery({
+  ...,
+  staleTime: Infinity,
+  gcTime: 0,
+})
+
+const formData = ref({
+  title: '',
+  desc: ''
+})
+
+watch(data, (v) => {
+  if (v) {
+    formData.title = v.title
+    formData.desc = v.desc
+  }
+}, {
+  immediate: true,
+})
+```
+
+这样，formData 只会初始化一次，并且，在组件卸载后，缓存就会失效，下一次再重新挂载组件，会再次发起请求
+
+如果你的这个 `useQuery` 完全只是为了这个页面上的表单使用的而不具备其他复用性，**目前也没有必要去使用 `useQuery`**
+
+你仍然可以使用传统的方式：
+
+```js
+onLoad((options) => {
+  const initialData = await fetchInitialData(options)
+  formData.title = initialData.title
+  formData.desc = initialData.desc
+})
+```
+
+还有一种场景，比如你再界面上点击一个修改弹出弹框进行一些字段的修改，修改保存后重新获取数据，那你可以去保存一下快照，然后去修改快照，保存后 `invalidateQueries`
+
+```js
+const { data } = useQuery({
+  ...,
+  queryKey: ['someDetail'],
+})
+
+const editUserInfoPopup = ref(false)
+const userInfoSnapshot = ref()
+
+function editUserInfo() {
+  userInfoSnapshot.value = cloneDeep(data.user)
+  editUserInfoPopup.value = true
+}
+
+function saveUserInfo() {
+  await updateUserInfo(userInfoSnapshot)
+  await queryClient.invalidateQueries({
+    queryKey: ['someDetail']
+  })
+}
+```

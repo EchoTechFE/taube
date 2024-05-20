@@ -1,6 +1,13 @@
 import { test, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { useQuery, queryMap, infiniteQueryMap, useInfiniteQuery, hash } from '.'
+import {
+  useQuery,
+  queryMap,
+  infiniteQueryMap,
+  useInfiniteQuery,
+  hash,
+  useQueryClient,
+} from '.'
 import { defineComponent, onUnmounted, ref } from 'vue'
 
 const onShowListeners = new Set<() => any>()
@@ -62,6 +69,7 @@ test('useQuery', async () => {
   expect(wrapper.vm.isFetching).toBe(true)
   expect(wrapper.vm.isPending).toBe(true)
   expect(wrapper.vm.isError).toBe(false)
+  expect(wrapper.vm.isSuccess).toBe(false)
   expect(wrapper.vm.data).toBeUndefined()
 
   expect(wrapper2.vm.isFetching).toBe(true)
@@ -77,6 +85,7 @@ test('useQuery', async () => {
   // 如果一个接口正在请求中，其他的请求不会再次发起
   expect(spy).toHaveBeenCalledTimes(1)
   expect(wrapper.vm.isFetching).toBe(false)
+  expect(wrapper.vm.isSuccess).toBe(true)
   expect(wrapper.vm.data).toBe('test')
 
   expect(wrapper2.vm.isFetching).toBe(false)
@@ -622,4 +631,49 @@ test('reactive enabled', async () => {
   expect(wrapper.vm.isPending).toBe(false)
   expect(queryFn).toHaveBeenCalledTimes(1)
   expect(wrapper.vm.data).toBe('test')
+})
+
+test('invalidate queries', async () => {
+  const queryClient = useQueryClient()
+  const queryFn = vi.fn(() => {
+    return new Promise<string>((resolve) => {
+      setTimeout(() => {
+        resolve('test')
+      }, 0)
+    })
+  })
+  const TestComponent = defineComponent({
+    setup() {
+      return {
+        ...useQuery({
+          queryKey: ['invalidateQueries'],
+          queryFn,
+        }),
+      }
+    },
+  })
+  const wrapper = mount(TestComponent)
+  expect(wrapper.vm.isFetching).toBe(true)
+  expect(wrapper.vm.isPending).toBe(true)
+  await new Promise((resolve) => {
+    setTimeout(resolve, 100)
+  })
+  expect(wrapper.vm.isFetching).toBe(false)
+  expect(wrapper.vm.isPending).toBe(false)
+  expect(queryFn).toHaveBeenCalledTimes(1)
+  expect(wrapper.vm.data).toBe('test')
+  queryFn.mockImplementationOnce(() => {
+    return new Promise<string>((resolve) => {
+      setTimeout(() => {
+        resolve('test2')
+      }, 0)
+    })
+  })
+  await queryClient.invalidateQueries({
+    queryKey: ['invalidateQueries'],
+  })
+  expect(wrapper.vm.isFetching).toBe(false)
+  expect(wrapper.vm.isPending).toBe(false)
+  expect(queryFn).toHaveBeenCalledTimes(2)
+  expect(wrapper.vm.data).toBe('test2')
 })

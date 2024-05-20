@@ -40,7 +40,7 @@ type QuerySubscriber = (payload: {
   error?: Error
   updatedAt?: number
   isOnInvalidate?: boolean
-}) => void
+}) => any
 
 type QueryFn<T> = (ctx: {
   queryKey: RawQueryKey
@@ -98,13 +98,16 @@ class InfiniteQueryObserver<T = any> {
     this.s.delete(subscriber)
   }
 
-  invalidate() {
-    this.s.forEach((subscriber) => {
-      subscriber({
+  async invalidate() {
+    for (const subscriber of this.s) {
+      const ret = subscriber({
         ...this.getCurrent(),
         isOnInvalidate: true,
       })
-    })
+      if (ret?.then) {
+        await ret
+      }
+    }
   }
 
   async fetch(ctx: {
@@ -114,11 +117,13 @@ class InfiniteQueryObserver<T = any> {
     getNextPageParam: (lastPage: T, pages: T[]) => any
   }) {
     if (this.promise) {
+      await this.promise
       return
     }
 
     if (this.data === undefined) {
       this.isPending = true
+    } else {
     }
     this.error = undefined
     this.isFetching = true
@@ -281,13 +286,16 @@ class QueryObserver<T = any> {
     this.s.delete(subscriber)
   }
 
-  invalidate() {
-    this.s.forEach((subscriber) => {
-      subscriber({
+  async invalidate() {
+    for (const subscriber of this.s) {
+      const ret = subscriber({
         ...this.getCurrent(),
         isOnInvalidate: true,
       })
-    })
+      if (ret?.then) {
+        await ret
+      }
+    }
   }
 
   async fetch(ctx: {
@@ -330,7 +338,7 @@ class QueryObserver<T = any> {
   }
 }
 
-const gcTime = 5 * 60 * 1000
+const DEFAULT_GC_TIME = 5 * 60 * 1000
 
 const map = new Map<string, QueryObserver>()
 const infiniteQueryMap = new Map<string, InfiniteQueryObserver>()
@@ -386,6 +394,7 @@ function useQueryObserverLifecycle<
   subscriber,
   createObserver,
   observerFetch,
+  gcTime,
 }: {
   queryKey: QueryKey
   enabled?: () => boolean
@@ -395,6 +404,7 @@ function useQueryObserverLifecycle<
   subscriber: Subscriber
   createObserver: () => Observer
   observerFetch: (observer: Observer) => void
+  gcTime?: number
 }) {
   enabled = enabled || (() => true)
   const keyRef = useKeyRef(queryKey)
@@ -413,7 +423,7 @@ function useQueryObserverLifecycle<
             }
           }
         },
-        gcTime,
+        gcTime ?? DEFAULT_GC_TIME,
       )
     }
   }
@@ -482,7 +492,7 @@ function useQueryObserverLifecycle<
             }
           }
         },
-        gcTime,
+        gcTime ?? DEFAULT_GC_TIME,
       )
     }
   })
@@ -494,12 +504,14 @@ export function useQuery<T>({
   enabled,
   refetchOnShow,
   staleTime,
+  gcTime,
 }: {
   queryKey: QueryKey
   queryFn: QueryFn<T>
   enabled?: () => boolean
   refetchOnShow?: boolean
   staleTime?: number
+  gcTime?: number
 }) {
   const keyRef = useKeyRef(queryKey)
   const data = ref<T | undefined>()
@@ -518,11 +530,10 @@ export function useQuery<T>({
     data: any
     error?: Error
     updatedAt?: number
-    isOnInvlidate?: boolean
+    isOnInvalidate?: boolean
   }) {
-    if (payload.isOnInvlidate) {
-      refetch()
-      return
+    if (payload.isOnInvalidate) {
+      return refetch()
     }
 
     data.value = payload.data
@@ -543,15 +554,16 @@ export function useQuery<T>({
     subscriber,
     createObserver: () => new QueryObserver(queryFn),
     observerFetch: (observer) => {
-      observer.fetch({ queryKey: keyRef.value, route: route as any })
+      return observer.fetch({ queryKey: keyRef.value, route: route as any })
     },
+    gcTime,
   })
 
-  function refetch() {
+  async function refetch() {
     const kHash = hash(keyRef.value)
     const observer = map.get(kHash)
     if (observer) {
-      observer.fetch({ queryKey: keyRef.value, route: route as any })
+      return observer.fetch({ queryKey: keyRef.value, route: route as any })
     }
   }
 
@@ -559,6 +571,7 @@ export function useQuery<T>({
     data,
     isPending,
     isFetching,
+    isSuccess: computed(() => !isPending.value && !!data.value),
     isError,
     error,
     refetch,
@@ -573,6 +586,7 @@ export function useInfiniteQuery<T>({
   maxRefetchPages,
   staleTime,
   refetchOnShow,
+  gcTime,
 }: {
   queryKey: QueryKey
   queryFn: InfiniteQueryFn<T>
@@ -581,6 +595,7 @@ export function useInfiniteQuery<T>({
   maxRefetchPages: number | undefined
   staleTime?: number
   refetchOnShow?: boolean
+  gcTime?: number
 }) {
   refetchOnShow = refetchOnShow || false
 
@@ -613,7 +628,7 @@ export function useInfiniteQuery<T>({
       const kHash = hash(keyRef.value)
       const observer = infiniteQueryMap.get(kHash)
       if (observer) {
-        observer.fetch({
+        return observer.fetch({
           queryKey: keyRef.value,
           route: route as any,
           getNextPageParam,
@@ -642,20 +657,21 @@ export function useInfiniteQuery<T>({
     subscriber,
     createObserver: () => new InfiniteQueryObserver(queryFn),
     observerFetch: (observer) => {
-      observer.fetch({
+      return observer.fetch({
         queryKey: keyRef.value,
         route: route as any,
         getNextPageParam,
         maxRefetchPages: maxRefetchPages ?? Infinity,
       })
     },
+    gcTime,
   })
 
   function fetchNextPage() {
     const kHash = hash(keyRef.value)
     const observer = infiniteQueryMap.get(kHash)
     if (observer) {
-      observer.fetchNextPage({
+      return observer.fetchNextPage({
         queryKey: keyRef.value,
         route: route as any,
         getNextPageParam,
@@ -675,6 +691,7 @@ export function useInfiniteQuery<T>({
     }),
     isPending,
     isFetching,
+    isSuccess: computed(() => !isPending.value && !!data.value),
     isError,
     error,
     fetchNextPage,
@@ -683,15 +700,14 @@ export function useInfiniteQuery<T>({
 }
 
 export function useQueryClient() {
-  function invalidateQueries({ queryKey }: { queryKey: RawQueryKey }) {
+  async function invalidateQueries({ queryKey }: { queryKey: RawQueryKey }) {
     const kHash = hash(queryKey)
-    const maps = [map, infiniteQueryMap]
-    maps.forEach((map) => {
-      const observer = map.get(kHash)
+    for (const m of [map, infiniteQueryMap]) {
+      const observer = m.get(kHash)
       if (observer) {
-        observer.invalidate()
+        await observer.invalidate()
       }
-    })
+    }
   }
 
   return {
