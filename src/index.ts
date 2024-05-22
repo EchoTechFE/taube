@@ -36,6 +36,15 @@ function useRoute() {
   return route
 }
 
+function getEnabled(route: { inited: boolean }, enabled?: () => boolean) {
+  return () => {
+    if (enabled) {
+      return enabled() && route.inited
+    }
+    return route.inited
+  }
+}
+
 type QuerySubscriber = (payload: {
   isFetching: boolean
   isPending: boolean
@@ -523,12 +532,7 @@ export function useQuery<T>({
   const isError = computed(() => !!error.value)
   const route = useRoute()
   const updatedAt = ref(-1)
-  enabled = () => {
-    if (enabled) {
-      return enabled() && route.inited
-    }
-    return route.inited
-  }
+  enabled = getEnabled(route, enabled)
 
   staleTime = staleTime ?? 0
 
@@ -618,12 +622,7 @@ export function useInfiniteQuery<T>({
   const isError = computed(() => !!error.value)
   const route = useRoute()
   const updatedAt = ref(-1)
-  enabled = () => {
-    if (enabled) {
-      return enabled() && route.inited
-    }
-    return route.inited
-  }
+  enabled = getEnabled(route, enabled)
 
   staleTime = staleTime ?? 0
 
