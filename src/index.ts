@@ -17,6 +17,7 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 function useRoute() {
   const route = reactive({
     query: {} as Record<string, string>,
+    inited: false,
   })
 
   const instance = getCurrentInstance()
@@ -24,9 +25,11 @@ function useRoute() {
     route.query = {
       ...(instance!.proxy!.$root as any).$scope.options,
     }
+    route.inited = true
   } else {
     onLoad((options) => {
       route.query = { ...options }
+      route.inited = true
     })
   }
 
@@ -397,7 +400,7 @@ function useQueryObserverLifecycle<
   gcTime,
 }: {
   queryKey: QueryKey
-  enabled?: () => boolean
+  enabled: () => boolean
   staleTime: number
   refetchOnShow: boolean | undefined
   map: Map<string, Observer>
@@ -406,7 +409,6 @@ function useQueryObserverLifecycle<
   observerFetch: (observer: Observer) => void
   gcTime?: number
 }) {
-  enabled = enabled || (() => true)
   const keyRef = useKeyRef(queryKey)
   const onShowTimestamp = ref(0)
 
@@ -443,7 +445,7 @@ function useQueryObserverLifecycle<
         }
 
         // 如果没有开启，直接返回
-        if (typeof currentEnabled === 'boolean' && !currentEnabled) {
+        if (!currentEnabled) {
           cleanSubscriber(kHash)
           return
         }
@@ -521,6 +523,12 @@ export function useQuery<T>({
   const isError = computed(() => !!error.value)
   const route = useRoute()
   const updatedAt = ref(-1)
+  enabled = () => {
+    if (enabled) {
+      return enabled() && route.inited
+    }
+    return route.inited
+  }
 
   staleTime = staleTime ?? 0
 
@@ -610,6 +618,12 @@ export function useInfiniteQuery<T>({
   const isError = computed(() => !!error.value)
   const route = useRoute()
   const updatedAt = ref(-1)
+  enabled = () => {
+    if (enabled) {
+      return enabled() && route.inited
+    }
+    return route.inited
+  }
 
   staleTime = staleTime ?? 0
 
