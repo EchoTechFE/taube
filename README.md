@@ -54,7 +54,12 @@ const { data, error, isPending, isFetching, isError } = useQuery({
    */
   queryKey: computed(() => ['todo', { id: todoId.value }]),
   queryFn: async () => {
-    return fetchTodo(todoId.value)
+    const todo = await fetchTodo(todoId.value)
+    // 在这里，你还能做一些数据格式转换
+    return {
+      ...todo,
+      formattedCreatedTime: dayjs(todo.createdTime).format('YYYY-MM-DD HH:mm')
+    }
   }
 })
 ```
