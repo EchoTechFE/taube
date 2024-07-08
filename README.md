@@ -204,7 +204,7 @@ onReachBottom(() => {
 ```js
 const { ... } = useInfiniteQuery({
   ...
-  // 最多刷新 5 页
+  // 最多刷新 5 页，丢弃后面的数据（如果大于 5 页）
   maxRefetchPages: 5,
 })
 ```

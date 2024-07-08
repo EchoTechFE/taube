@@ -568,6 +568,50 @@ test('useInfiniteQuery dispose', async () => {
   vi.useRealTimers()
 })
 
+test('useInfiniteQuery nextParams', async () => {
+  const queryFn = vi.fn()
+  queryFn.mockImplementationOnce(() => {
+    return new Promise<any>((resolve) => {
+      resolve({ hasMore: true })
+    })
+  })
+  const TestComponent = defineComponent({
+    setup() {
+      return {
+        ...useInfiniteQuery({
+          enabled: () => true,
+          queryKey: ['useInfiniteQueryNextParams'],
+          queryFn,
+          getNextPageParam(lastPage: any) {
+            if (lastPage.hasMore) {
+              return true
+            }
+            return undefined
+          },
+          maxRefetchPages: Infinity,
+          staleTime: 0,
+        }),
+      }
+    },
+  })
+  const wrapper = mount(TestComponent)
+  await flushPromises()
+  expect(wrapper.vm.data?.pages).toHaveLength(1)
+  queryFn.mockImplementationOnce(() => {
+    return new Promise<any>((resolve) => {
+      resolve({ hasMore: false })
+    })
+  })
+  wrapper.vm.fetchNextPage()
+  await flushPromises()
+  expect(wrapper.vm.data?.pages).toHaveLength(2)
+  expect(wrapper.vm.hasNextPage).toBe(true)
+  wrapper.vm.fetchNextPage()
+  await flushPromises()
+  expect(wrapper.vm.data?.pages).toHaveLength(2)
+  expect(wrapper.vm.hasNextPage).toBe(false)
+})
+
 test('enabled', async () => {
   const queryFn = vi.fn(() => {
     return new Promise<string>((resolve) => {

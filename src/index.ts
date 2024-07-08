@@ -230,8 +230,10 @@ class InfiniteQueryObserver<T = any> {
       this.data[this.data.length - 1],
       this.data,
     )
+
     if (nextPageParam == null) {
       this.hasNextPage = false
+      this.broadcast()
       return
     }
     this.isFetching = true
@@ -509,6 +511,98 @@ function useQueryObserverLifecycle<
   })
 }
 
+/**
+ * 使用 useQuery 声明一个绑定到唯一键的异步数据源
+ *
+ * ## 获取 todo 详情
+ *
+ * ```js
+ * const { data, error, isPending, isFetching, isError } = useQuery({
+ *   queryKey: computed(() => ['todo', { id: todoId.value }]),
+ *   queryFn: async () => {
+ *     const todo = await fetchTodo(todoId.value)
+ *     return {
+ *       ...todo,
+ *       formattedCreatedTime: dayjs(todo.createdTime).format('YYYY-MM-DD HH:mm')
+ *     }
+ *   }
+ * })
+ * ```
+ *
+ * ## 读取路由中的参数
+ *
+ * ```js
+ * const { data, error, isPending, isFetching, isError } = useQuery({
+ *   // 你可以使用 queryKey 的函数形式，能够拿到 route 读取路由参数
+ *   queryKey: ({ route }) => ['todo', { id: route.query.id }],
+ *   // 在 queryFn 中，也能拿到 route 参数
+ *   queryFn: async ({ route }) => {
+ *     return fetchTodo(route.id)
+ *   }
+ * })
+ * ```
+ *
+ * ## query 之间依赖
+ *
+ * ```js
+ * const userId = ref(1)
+ * const todoId = ref(1)
+ *
+ * const { data: user } = useQuery({
+ *   queryKey: () => ['user', { id: userId.value }],
+ *   queryFn: async () => {
+ *     return fetchUser(userId.value)
+ *   },
+ * })
+ *
+ * // 等到 user 有数据，再去发起请求
+ * const { data: todo } = useQuery({
+ *   queryKey: () => ['todo', { userId: userId.value }],
+ *   queryFn: async () => {
+ *     return fetchTodosByUserId(userId.value)
+ *   },
+ *   enabled: () => !!user.value.id,
+ * })
+ * ```
+ *
+ * ## enabled
+ *
+ * ```js
+ * // 假设用户登录态存在在 userStore 里面
+ * const userStore = useUserStore()
+ *
+ * const { data, error, isPending, isFetching, isError } = useQuery({
+ *   queryKey: ({ route }) => ['todo', { id: route.query.id }],
+ *   queryFn: async ({ route }) => {
+ *     return fetchMyTodo(route.id)
+ *   },
+ *   // enabled 是一个返回响应式数据的函数，当响应式数据为 true 时，queryFn 才会被执行
+ *   enabled: () => userStore.isLogin,
+ * })
+ * ```
+ *
+ * ## 过期时间
+ *
+ * ```js
+ * // 默认过期时间为 0，也就是当 useQuery 重新触发的时候，都会重新去拉取数据
+ * // 但如果你的场景数据可以忍受数据不是最新的，可以加长 staleTime
+ * const { data } = useQuery({
+ *   ...,
+ *   staleTime: 5 * 1000,
+ * })
+ * ```
+ *
+ * ## onShow 触发数据更新
+ *
+ * ```js
+ * const { data } = useQuery({
+ *   ...,
+ *   staleTime: 5 * 1000,
+ *   // 当 onShow 触发的时候，监测是否要刷新数据
+ *   refetchOnShow: true
+ * })
+ * ```
+ */
 export function useQuery<T>({
   queryKey,
   queryFn,
@@ -590,6 +684,55 @@ export function useQuery<T>({
   }
 }
 
+/**
+ * 使用 useQuery 声明一个绑定到唯一键的无限滚动类型的异步数据源
+ *
+ * ## InfiniteQuery
+ *
+ * ```js
+ * // 与 useQuery 不同，此时 data.value 的数据结构为 { pages: T[] }
+ * // fetchNextPage 用来获取下一页
+ * // hasNextPage 代表是否还有下一页
+ * // 其他与 useQuery 相同
+ * const { data, fetchNextPage, hasNextPage, error, isError, isPending, isFetching, isFetchingNextPage } = useInfiniteQuery({
+ *   queryKey: () => ['todos'],
+ *   // pageParam 上一次 getNextPageParam 返回的数据，可以返回任何数据
+ *   // 一般来说，比如无限滚动，返回的可能是对应的 cursor 或者 offset
+ *   // 请求第一页数据的时候，pageParam 为 undefined
+ *   queryFn: async ({ pageParam }) => {
+ *     return fetchTodos({ cursor: pageParam })
+ *   },
+ *   getNextPageParam(lastPage, pages) {
+ *     // 返回 undefined，说明没有更多数据了，hasNextPage 变为 false
+ *     if (lastPage.length === 0) {
+ *       return undefined
+ *     }
+ *     return lastPage[lastPage.length - 1].id
+ *   }
+ * })
+ *
+ * // data.pages 为分页数据对应的数据，一般来说，你还需要自己对其进行处理
+ * // 比如说分页数据，第一页返回的是 { data: [1] }，第二页返回的是 { data: [2] }
+ * // 那么 data.pages 为 [{ data: [1] }, { data: [2] }]
+ * // 很多时候，你会想要把其转换为一个数组
+ * const items = computed(() => data.value?.pages?.flatMap(page => page.data) ?? [])
+ *
+ * // 触底，请求下一页
+ * onReachBottom(() => {
+ *   fetchNextPage()
+ * })
+ * ```
+ *
+ * ## 触发重新获取数据，控制刷新数据的页数
+ *
+ * ```js
+ * const { ... } = useInfiniteQuery({
+ *   ...
+ *   // 最多刷新 5 页，丢弃后面的数据（如果大于 5 页）
+ *   maxRefetchPages: 5,
+ * })
+ * ```
+ */
 export function useInfiniteQuery<T>({
   queryKey,
   queryFn,
@@ -712,6 +855,22 @@ export function useInfiniteQuery<T>({
   }
 }
 
+/**
+ * 用命令式的方式控制管理的 queries
+ *
+ * ## 使数据失效
+ *
+ * 你更新了一条数据，并且想更新数据，使界面展现最新的数据，使用 invalidateQueries，可以重新获取某个 queryKey 对应的数据
+ *
+ * ```js
+ * const queryClient = useQueryClient()
+ *
+ * async function updateTodo(id) {
+ *   await updateTodoById(id)
+ *   queryClient.invalidateQueries({ queryKey: ['todo', { id } ]})
+ * }
+ * ```
+ */
 export function useQueryClient() {
   async function invalidateQueries({ queryKey }: { queryKey: RawQueryKey }) {
     const kHash = hash(queryKey)
