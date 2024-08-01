@@ -8,8 +8,10 @@ import {
   reactive,
   getCurrentInstance,
 } from 'vue'
-import type { Ref } from 'vue'
+import type { Ref, App } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
+
+let beforeResolveOptions = (options: any) => options
 
 // status: fetching | paused | idle
 // status: pending | error | success
@@ -23,12 +25,12 @@ function useRoute() {
   const instance = getCurrentInstance()
   if ((instance?.proxy?.$root as any)?.$scope?.options) {
     route.query = {
-      ...(instance!.proxy!.$root as any).$scope.options,
+      ...beforeResolveOptions((instance!.proxy!.$root as any).$scope.options),
     }
     route.inited = true
   } else {
     onLoad((options) => {
-      route.query = { ...options }
+      route.query = beforeResolveOptions({ ...options })
       route.inited = true
     })
   }
@@ -884,6 +886,17 @@ export function useQueryClient() {
 
   return {
     invalidateQueries,
+  }
+}
+
+export const TaubePlugin = (
+  app: App,
+  options: {
+    beforeResolveOptions?: (options: any) => any
+  } = {},
+) => {
+  if (options.beforeResolveOptions) {
+    beforeResolveOptions = options.beforeResolveOptions
   }
 }
 
