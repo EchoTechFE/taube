@@ -16,9 +16,10 @@ let beforeResolveOptions = (options: any) => options
 // status: fetching | paused | idle
 // status: pending | error | success
 
-function useRoute() {
+export function useRoute() {
   const route = reactive({
     query: {} as Record<string, string>,
+    path: '',
     inited: false,
   })
 
@@ -29,10 +30,17 @@ function useRoute() {
     }
     route.inited = true
   } else {
-    onLoad((options) => {
-      route.query = beforeResolveOptions({ ...options })
-      route.inited = true
-    })
+    if (typeof this.getCurrentPages === 'function') {
+      let pages = this.getCurrentPages()
+      let page = pages[pages.length - 1]
+      route.path = page.$page.path
+      route.query = beforeResolveOptions({ ...page.$page.options })
+    } else {
+      onLoad((options) => {
+        route.query = beforeResolveOptions({ ...options })
+      })
+    }
+    route.inited = true
   }
 
   return route
