@@ -28,7 +28,8 @@ export function useRoute() {
       ...beforeResolveOptions((instance!.proxy!.$root as any).$scope.options),
     }
     route.inited = true
-  } else if (typeof getCurrentPages === 'function') {
+    // @ts-ignore
+  } else if (typeof instance?.proxy?.$getAppWebview === 'function') {
     let page = getCurrentPages().find((p) => {
       if (typeof p.$getAppWebview === 'function') {
         return (
