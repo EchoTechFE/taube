@@ -29,18 +29,26 @@ export function useRoute() {
       ...beforeResolveOptions((instance!.proxy!.$root as any).$scope.options),
     }
     route.inited = true
-  } else {
-    if (typeof this.getCurrentPages === 'function') {
-      let pages = this.getCurrentPages()
-      let page = pages[pages.length - 1]
-      route.path = page.$page.path
-      route.query = beforeResolveOptions({ ...page.$page.options })
-    } else {
-      onLoad((options) => {
-        route.query = beforeResolveOptions({ ...options })
-      })
-    }
+  } else if (typeof getCurrentPages === 'function') {
+    let page = getCurrentPages().find((p) => {
+      if (typeof p.$getAppWebview === 'function') {
+        return (
+          // @ts-ignore
+          p.$getAppWebview().__uuid__ ===
+          // @ts-ignore
+          instance?.proxy?.$getAppWebview().__uuid__
+        )
+      }
+      return false
+    })
+    // @ts-ignore
+    route.query = beforeResolveOptions({ ...page?.$page.options })
     route.inited = true
+  } else {
+    onLoad((options) => {
+      route.query = beforeResolveOptions({ ...options })
+      route.inited = true
+    })
   }
 
   return route
