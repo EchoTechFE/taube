@@ -45,8 +45,7 @@ export function useRoute() {
 
     // @ts-ignore
     route.path = page?.$page.path
-    // @ts-ignore
-    console.log(page?.$page.options)
+
     // @ts-ignore
     route.query = beforeResolveOptions({ ...page?.$page.options })
 
