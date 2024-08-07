@@ -19,7 +19,6 @@ let beforeResolveOptions = (options: any) => options
 export function useRoute() {
   const route = reactive({
     query: {} as Record<string, string>,
-    path: '',
     inited: false,
   })
 
