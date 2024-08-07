@@ -19,6 +19,7 @@ let beforeResolveOptions = (options: any) => options
 export function useRoute() {
   const route = reactive({
     query: {} as Record<string, string>,
+    path: '',
     inited: false,
   })
 
@@ -41,11 +42,19 @@ export function useRoute() {
       }
       return false
     })
+
+    // @ts-ignore
+    route.path = page?.$page.path
+    // @ts-ignore
+    console.log(page?.$page.options)
     // @ts-ignore
     route.query = beforeResolveOptions({ ...page?.$page.options })
+
     route.inited = true
   } else {
     onLoad((options) => {
+      // @ts-ignore
+      route.path = instance!.proxy.route
       route.query = beforeResolveOptions({ ...options })
       route.inited = true
     })
