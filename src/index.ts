@@ -16,9 +16,10 @@ let beforeResolveOptions = (options: any) => options
 // status: fetching | paused | idle
 // status: pending | error | success
 
-function useRoute() {
+export function useRoute() {
   const route = reactive({
     query: {} as Record<string, string>,
+    path: '',
     inited: false,
   })
 
@@ -28,8 +29,31 @@ function useRoute() {
       ...beforeResolveOptions((instance!.proxy!.$root as any).$scope.options),
     }
     route.inited = true
+    // @ts-ignore
+  } else if (typeof instance?.proxy?.$getAppWebview === 'function') {
+    let page = getCurrentPages().find((p) => {
+      if (typeof p.$getAppWebview === 'function') {
+        return (
+          // @ts-ignore
+          p.$getAppWebview().__uuid__ ===
+          // @ts-ignore
+          instance?.proxy?.$getAppWebview().__uuid__
+        )
+      }
+      return false
+    })
+
+    // @ts-ignore
+    route.path = page?.$page.path
+
+    // @ts-ignore
+    route.query = beforeResolveOptions({ ...page?.$page.options })
+
+    route.inited = true
   } else {
     onLoad((options) => {
+      // @ts-ignore
+      route.path = instance!.proxy.route
       route.query = beforeResolveOptions({ ...options })
       route.inited = true
     })

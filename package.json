@@ -25,7 +25,7 @@
   "author": "zhuscat",
   "license": "ISC",
   "devDependencies": {
-    "@dcloudio/uni-app": "3.0.0-3061820230117001",
+    "@dcloudio/uni-app": "3.0.0-3090620231104002",
     "@sinonjs/fake-timers": "^11.2.2",
     "@vue/test-utils": "^2.4.6",
     "happy-dom": "^14.10.2",
