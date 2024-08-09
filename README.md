@@ -38,16 +38,16 @@ const { data, error, isPending, isFetching, isError } = useQuery({
    * queryKey 可以是一个可以序列化的数组（plain object），可以是这样一个数组的 computed 或者 ref 形式
    * 或者是一个返回响应式数据的函数，如：
    * ['todo', { id: 1 }]
-   * 
+   *
    * const todoQueryKey = ref(['todo', { id: 1 }])
    * queryKey: todoQueryKey
-   * 
+   *
    * const todoId = ref(1)
    * queryKey: computed(() => ['todo', { id : todoId.value }])
-   * 
+   *
    * const todoId = ref(1)
    * queryKey: () => ['todo', { id: todoId.value }]
-   * 
+   *
    * 当 queryKey 是响应式数据的时候
    * queryKey 发生变化的时候，taube 会自动重新请求数据，你无需关心各种跟请求相关的逻辑
    * 只需要读取 useQuery 返回的响应式数据去渲染界面即可
@@ -58,9 +58,9 @@ const { data, error, isPending, isFetching, isError } = useQuery({
     // 在这里，你还能做一些数据格式转换
     return {
       ...todo,
-      formattedCreatedTime: dayjs(todo.createdTime).format('YYYY-MM-DD HH:mm')
+      formattedCreatedTime: dayjs(todo.createdTime).format('YYYY-MM-DD HH:mm'),
     }
-  }
+  },
 })
 ```
 
@@ -75,7 +75,7 @@ const { data, error, isPending, isFetching, isError } = useQuery({
   // 在 queryFn 中，也能拿到 route 参数
   queryFn: async ({ route }) => {
     return fetchTodo(route.id)
-  }
+  },
 })
 ```
 
@@ -95,7 +95,7 @@ const { data, error, isPending, isFetching, isError } = useQuery({
     return fetchMyTodo(route.id)
   },
   // enabled 是一个返回响应式数据的函数，当响应式数据为 true 时，queryFn 才会被执行
-  enabled: () => userStore.isLogin
+  enabled: () => userStore.isLogin,
 })
 ```
 
@@ -132,7 +132,7 @@ const { data: todo } = useQuery({
 const { data } = useQuery({
   ...,
   staleTime: 5 * 1000,
-}) 
+})
 ```
 
 ### onShow 的触发数据更新
@@ -154,13 +154,21 @@ const { data } = useQuery({
 
 比如滑动到底部获取更多数据
 
-
 ```js
 // 与 useQuery 不同，此时 data.value 的数据结构为 { pages: T[] }
 // fetchNextPage 用来获取下一页
 // hasNextPage 代表是否还有下一页
 // 其他与 useQuery 相同
-const { data, fetchNextPage, hasNextPage, error, isError, isPending, isFetching, isFetchingNextPage } = useInfiniteQuery({
+const {
+  data,
+  fetchNextPage,
+  hasNextPage,
+  error,
+  isError,
+  isPending,
+  isFetching,
+  isFetchingNextPage,
+} = useInfiniteQuery({
   queryKey: () => ['todos'],
   // pageParam 上一次 getNextPageParam 返回的数据，可以返回任何数据
   // 一般来说，比如无限滚动，返回的可能是对应的 cursor 或者 offset
@@ -174,14 +182,16 @@ const { data, fetchNextPage, hasNextPage, error, isError, isPending, isFetching,
       return undefined
     }
     return lastPage[lastPage.length - 1].id
-  }
+  },
 })
 
 // data.pages 为分页数据对应的数据，一般来说，你还需要自己对其进行处理
 // 比如说分页数据，第一页返回的是 { data: [1] }，第二页返回的是 { data: [2] }
 // 那么 data.pages 为 [{ data: [1] }, { data: [2] }]
 // 很多时候，你会想要把其转换为一个数组
-const items = computed(() => data.value?.pages?.flatMap(page => page.data) ?? [])
+const items = computed(
+  () => data.value?.pages?.flatMap((page) => page.data) ?? [],
+)
 
 // 触底，请求下一页
 onReachBottom(() => {
@@ -220,8 +230,59 @@ const queryClient = useQueryClient()
 
 async function updateTodo(id) {
   await updateTodoById(id)
-  queryClient.invalidateQueries({ queryKey: ['todo', { id } ]})
+  queryClient.invalidateQueries({ queryKey: ['todo', { id }] })
 }
+```
+
+### 更新数据
+
+场景：
+
+比如说你删除了一条数据，你可以使用 setQueryData 来更新数据。
+updater 可以是有返回新的数据结构的函数，也可以直接传入新的数据结构。
+
+```js
+const queryClient = useQueryClient()
+
+async function deleteTodo(id) {
+  await deleteTodoById(id)
+  queryClient.setQueryData({
+    queryKey: ['todos'],
+    updater: (data) => {
+      return data.filter((todo) => todo.id !== id)
+    },
+  })
+}
+```
+
+但是不能直接修改 cache 中的数据，因为 cache 中的数据是只读的
+
+```js
+const queryClient = useQueryClient()
+queryClient.setQueryData({
+  queryKey: ['todos'],
+  updater: (data) => {
+    data[0].name = 'new name' // 这样是不行的
+    return data
+  },
+})
+```
+
+需要注意；
+
+调用 setQueryData 会立即更新数据，不会重新获取数据。<br />
+如果你想重新获取数据，可以使用 invalidateQueries，使数据失效，重新获取数据，这样可以保证数据的一致性。<br />
+当使用 useInfiniteQuery 的时候，调用者需要对分页数据进行处理，setQueryData 不会对分页数据进行处理。
+
+### 获取数据
+
+场景：
+
+获取对应 queryKey 的缓存数据
+
+```js
+const queryClient = useQueryClient()
+const todos = queryClient.getQueryData(['todos'])
 ```
 
 ### form 场景
