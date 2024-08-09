@@ -238,9 +238,8 @@ async function updateTodo(id) {
 
 场景：
 
-比如说你删除了一条数据，你可以使用 setQueryData 来更新数据
+比如说你删除了一条数据，你可以使用 setQueryData 来更新数据。
 updater 可以是有返回新的数据结构的函数，也可以直接传入新的数据结构。
-queryKey 不存在会在缓存区创建一个新查询，只是简单的数据，后续也可以通过 getQueryData 来获取这个不存在的 queryKey 的数据。
 
 ```js
 const queryClient = useQueryClient()

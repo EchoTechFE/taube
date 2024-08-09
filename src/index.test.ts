@@ -745,12 +745,6 @@ test('setQueryData on useQuery', async () => {
 
   const wrapper = mount(TestComponent)
   await flushPromises()
-  queryClient.setQueryData(['no-exist-key'], (data: any) => {
-    return { ...data, data: 'no exist key newData' }
-  })
-  queryClient.getQueryData(['no-exist-key'])
-  expect(wrapper.vm.data).toEqual({ data: 'testData' })
-
   queryClient.setQueryData(queryKey, (data: any) => {
     return { ...data, data: 'newData' }
   })
@@ -791,12 +785,6 @@ test('setQueryData on useInfiniteQuery', async () => {
         queryClient.setQueryData(queryKey, undefined)
       }
 
-      const noExistKey = () => {
-        queryClient.setQueryData(['no-exist-key'], (data: any) => {
-          return { ...data, data: 'no exist key newData' }
-        })
-      }
-
       return {
         ...useInfiniteQuery({
           enabled: () => true,
@@ -815,7 +803,6 @@ test('setQueryData on useInfiniteQuery', async () => {
         setQueryDataReplace,
         setQueryDataNull,
         undefinedQueryData,
-        noExistKey,
       }
     },
   })
@@ -832,9 +819,6 @@ test('setQueryData on useInfiniteQuery', async () => {
   wrapper.vm.fetchNextPage()
   await flushPromises()
   expect(wrapper.vm.data?.pages).toHaveLength(2)
-
-  wrapper.vm.noExistKey()
-  expect(wrapper.vm.data?.pages).toEqual([{ num: 1 }, { num: 2 }])
 
   wrapper.vm.undefinedQueryData()
   expect(wrapper.vm.data?.pages).toEqual([{ num: 1 }, { num: 2 }])
