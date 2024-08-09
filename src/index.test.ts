@@ -721,3 +721,133 @@ test('invalidate queries', async () => {
   expect(queryFn).toHaveBeenCalledTimes(2)
   expect(wrapper.vm.data).toBe('test2')
 })
+
+test('setQueryData on useQuery', async () => {
+  const queryClient = useQueryClient()
+  const queryKey = ['setQueryDataOnUseQuery']
+  const queryData = { data: 'testData' }
+  const queryFn = vi.fn(() => {
+    return new Promise<any>((resolve) => {
+      resolve(queryData)
+    })
+  })
+
+  const TestComponent = defineComponent({
+    setup() {
+      return {
+        ...useQuery({
+          queryKey,
+          queryFn,
+        }),
+      }
+    },
+  })
+
+  const wrapper = mount(TestComponent)
+  await flushPromises()
+  queryClient.setQueryData(['no-exist-key'], (data: any) => {
+    return { ...data, data: 'no exist key newData' }
+  })
+  queryClient.getQueryData(['no-exist-key'])
+  expect(wrapper.vm.data).toEqual({ data: 'testData' })
+
+  queryClient.setQueryData(queryKey, (data: any) => {
+    return { ...data, data: 'newData' }
+  })
+  expect(wrapper.vm.data).toEqual({ data: 'newData' })
+
+  queryClient.setQueryData(queryKey, undefined)
+  expect(wrapper.vm.data).toEqual({ data: 'newData' })
+})
+
+test('setQueryData on useInfiniteQuery', async () => {
+  const queryClient = useQueryClient()
+  const queryKey = ['setQueryDataOnUseInfiniteQuery']
+  const queryFn = vi.fn()
+  queryFn.mockImplementationOnce(() => {
+    return new Promise<any>((resolve) => {
+      resolve({ num: 1 })
+    })
+  })
+
+  const TestComponent = defineComponent({
+    setup() {
+      const setQueryDataNewPage = () => {
+        queryClient.setQueryData(queryKey, (oldData: any) => {
+          const newData = [...oldData, { num: 3 }]
+          return newData
+        })
+      }
+
+      const setQueryDataReplace = () => {
+        queryClient.setQueryData(queryKey, [{ num: 999 }])
+      }
+
+      const setQueryDataNull = () => {
+        queryClient.setQueryData(queryKey, null)
+      }
+
+      const undefinedQueryData = () => {
+        queryClient.setQueryData(queryKey, undefined)
+      }
+
+      const noExistKey = () => {
+        queryClient.setQueryData(['no-exist-key'], (data: any) => {
+          return { ...data, data: 'no exist key newData' }
+        })
+      }
+
+      return {
+        ...useInfiniteQuery({
+          enabled: () => true,
+          queryKey: queryKey,
+          queryFn,
+          getNextPageParam(lastPage: any) {
+            if (lastPage.num) {
+              return lastPage.num
+            }
+            return undefined
+          },
+          maxRefetchPages: Infinity,
+          staleTime: 0,
+        }),
+        setQueryDataNewPage,
+        setQueryDataReplace,
+        setQueryDataNull,
+        undefinedQueryData,
+        noExistKey,
+      }
+    },
+  })
+
+  const wrapper = mount(TestComponent)
+  await flushPromises()
+
+  expect(wrapper.vm.data?.pages).toHaveLength(1)
+  queryFn.mockImplementationOnce(() => {
+    return new Promise<any>((resolve) => {
+      resolve({ num: 2 })
+    })
+  })
+  wrapper.vm.fetchNextPage()
+  await flushPromises()
+  expect(wrapper.vm.data?.pages).toHaveLength(2)
+
+  wrapper.vm.noExistKey()
+  expect(wrapper.vm.data?.pages).toEqual([{ num: 1 }, { num: 2 }])
+
+  wrapper.vm.undefinedQueryData()
+  expect(wrapper.vm.data?.pages).toEqual([{ num: 1 }, { num: 2 }])
+
+  wrapper.vm.setQueryDataNewPage()
+  expect(wrapper.vm.data?.pages).toEqual([{ num: 1 }, { num: 2 }, { num: 3 }])
+
+  wrapper.vm.setQueryDataReplace()
+  expect(wrapper.vm.data?.pages).toEqual([{ num: 999 }])
+
+  wrapper.vm.undefinedQueryData()
+  expect(wrapper.vm.data?.pages).toEqual([{ num: 999 }])
+
+  wrapper.vm.setQueryDataNull()
+  expect(wrapper.vm.data?.pages).toEqual([])
+})
