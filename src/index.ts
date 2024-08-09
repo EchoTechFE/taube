@@ -951,59 +951,24 @@ export function useQueryClient() {
     queryKey: RawQueryKey,
     updater: T | ((oldData: T | undefined) => T),
   ) {
-    const keyRef = useKeyRef(queryKey)
-    const kHash = hash(keyRef.value)
-
-    const findObserver = [map, infiniteQueryMap].find((m) => m.get(kHash))
-    if (!findObserver) {
-      const newData =
-        typeof updater === 'function' ? (updater as any)() : updater
-      const newObserver: any = new QueryObserver(() => Promise.resolve(newData))
-      map.set(kHash, newObserver)
-      newObserver.updateData(newData)
-
-      scheduleTimeout(
-        kHash,
-        () => {
-          if (newObserver.s.size === 0) {
-            if (map.get(kHash) === newObserver) {
-              map.delete(kHash)
-            }
-          }
-        },
-        DEFAULT_GC_TIME,
-      )
-      return
-    }
-
+    const kHash = hash(queryKey)
     for (const m of [map, infiniteQueryMap]) {
-      const observer: any = m.get(kHash)
+      const observer = m.get(kHash)
       if (observer && updater !== undefined) {
         const currentData = observer.getCurrent().data
         const newData =
           typeof updater === 'function'
-            ? (updater as (oldData: T | undefined) => T)(currentData)
+            ? (updater as (data: typeof currentData) => typeof currentData)(
+                currentData,
+              )
             : updater
         observer.updateData(newData)
-
-        scheduleTimeout(
-          kHash,
-          () => {
-            if (observer.s.size === 0) {
-              if (m.get(kHash) === observer) {
-                m.delete(kHash)
-              }
-            }
-          },
-          DEFAULT_GC_TIME,
-        )
       }
     }
   }
 
   function getQueryData<T>(queryKey: RawQueryKey) {
-    const keyRef = useKeyRef(queryKey)
-    const kHash = hash(keyRef.value)
+    const kHash = hash(queryKey)
     for (const m of [map, infiniteQueryMap]) {
       const observer = m.get(kHash)
       if (observer) {
