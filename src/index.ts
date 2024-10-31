@@ -118,7 +118,7 @@ class InfiniteQueryObserver<T = any> {
   }>
   hasNextPage = true
 
-  constructor(private fn: InfiniteQueryFn<T>) {}
+  constructor() {}
 
   private broadcast() {
     this.s.forEach((subscriber) => {
@@ -159,6 +159,7 @@ class InfiniteQueryObserver<T = any> {
     route: { query: Record<string, string> }
     maxRefetchPages: number
     getNextPageParam: (lastPage: T, pages: T[]) => any
+    queryFn: InfiniteQueryFn<T>
   }) {
     if (this.promise) {
       await this.promise
@@ -191,7 +192,7 @@ class InfiniteQueryObserver<T = any> {
             }
           }
 
-          const ret = await this.fn({
+          const ret = await ctx.queryFn({
             queryKey: ctx.queryKey,
             route: ctx.route,
             pageParam:
@@ -203,7 +204,7 @@ class InfiniteQueryObserver<T = any> {
           pageParams.push(pageParam)
         }
       } else {
-        const ret = await this.fn({
+        const ret = await ctx.queryFn({
           queryKey: ctx.queryKey,
           route: ctx.route,
           pageParam: undefined,
@@ -245,6 +246,7 @@ class InfiniteQueryObserver<T = any> {
     queryKey: RawQueryKey
     route: { query: Record<string, string> }
     getNextPageParam: (lastPage: T, pages: T[]) => any
+    queryFn: InfiniteQueryFn<T>
   }) {
     if (this.isFetching) {
       return
@@ -270,12 +272,14 @@ class InfiniteQueryObserver<T = any> {
     }
     this.isFetching = true
     this.isFetchingNextPage = true
-    this.promise = this.fn({ ...ctx, pageParam: nextPageParam }).then((ret) => {
-      return {
-        pages: [ret],
-        pageParams: [nextPageParam],
-      }
-    })
+    this.promise = ctx
+      .queryFn({ ...ctx, pageParam: nextPageParam })
+      .then((ret) => {
+        return {
+          pages: [ret],
+          pageParams: [nextPageParam],
+        }
+      })
     this.broadcast()
     try {
       const ret = await this.promise
@@ -314,7 +318,7 @@ class QueryObserver<T = any> {
   error?: Error
   promise?: Promise<T>
 
-  constructor(private fn: QueryFn<T>) {}
+  constructor() {}
 
   private broadcast() {
     this.s.forEach((subscriber) => {
@@ -353,6 +357,7 @@ class QueryObserver<T = any> {
   async fetch(ctx: {
     queryKey: RawQueryKey
     route: { query: Record<string, string> }
+    queryFn: QueryFn<T>
   }) {
     if (this.promise) {
       await this.promise
@@ -364,7 +369,7 @@ class QueryObserver<T = any> {
     }
     this.isFetching = true
     this.error = undefined
-    this.promise = this.fn(ctx)
+    this.promise = ctx.queryFn(ctx)
     this.broadcast()
     try {
       const ret = await this.promise
@@ -696,9 +701,13 @@ export function useQuery<T>({
     refetchOnShow,
     map,
     subscriber,
-    createObserver: () => new QueryObserver(queryFn),
+    createObserver: () => new QueryObserver(),
     observerFetch: (observer) => {
-      return observer.fetch({ queryKey: keyRef.value, route: route as any })
+      return observer.fetch({
+        queryKey: keyRef.value,
+        route: route as any,
+        queryFn,
+      })
     },
     gcTime,
   })
@@ -707,7 +716,11 @@ export function useQuery<T>({
     const kHash = hash(keyRef.value)
     const observer = map.get(kHash)
     if (observer) {
-      return observer.fetch({ queryKey: keyRef.value, route: route as any })
+      return observer.fetch({
+        queryKey: keyRef.value,
+        route: route as any,
+        queryFn,
+      })
     }
   }
 
@@ -827,6 +840,7 @@ export function useInfiniteQuery<T>({
           route: route as any,
           getNextPageParam,
           maxRefetchPages: maxRefetchPages ?? Infinity,
+          queryFn,
         })
       }
       return
@@ -849,13 +863,14 @@ export function useInfiniteQuery<T>({
     refetchOnShow,
     map: infiniteQueryMap,
     subscriber,
-    createObserver: () => new InfiniteQueryObserver(queryFn),
+    createObserver: () => new InfiniteQueryObserver(),
     observerFetch: (observer) => {
       return observer.fetch({
         queryKey: keyRef.value,
         route: route as any,
         getNextPageParam,
         maxRefetchPages: maxRefetchPages ?? Infinity,
+        queryFn,
       })
     },
     gcTime,
@@ -869,6 +884,7 @@ export function useInfiniteQuery<T>({
         queryKey: keyRef.value,
         route: route as any,
         getNextPageParam,
+        queryFn,
       })
     }
   }
