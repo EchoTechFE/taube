@@ -246,11 +246,8 @@ const queryClient = useQueryClient()
 
 async function deleteTodo(id) {
   await deleteTodoById(id)
-  queryClient.setQueryData({
-    queryKey: ['todos'],
-    updater: (data) => {
-      return data.filter((todo) => todo.id !== id)
-    },
+  queryClient.setQueryData(['todos'], (data) => {
+    return data.filter((todo) => todo.id !== id)
   })
 }
 ```
@@ -259,12 +256,9 @@ async function deleteTodo(id) {
 
 ```js
 const queryClient = useQueryClient()
-queryClient.setQueryData({
-  queryKey: ['todos'],
-  updater: (data) => {
-    data[0].name = 'new name' // 这样是不行的
-    return data
-  },
+queryClient.setQueryData(['todos'], (data) => {
+  data[0].name = 'new name' // 这样是不行的
+  return data
 })
 ```
 
